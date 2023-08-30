@@ -350,8 +350,6 @@ def add_guardian_with_permit(_protected_parameters: GuardianPermit, _guardian_pa
      assert SignatureChecker(self.signature).is_valid_signature_now(_protected_parameters.signer, protected_hash, _protected_parameters.owner_signature), "Nunu: protected signature fail"
      assert SignatureChecker(self.signature).is_valid_signature_now(_guardian_parameters.signer, guardian_hash, _guardian_parameters.owner_signature), "Nunu: guardian signature fail"
      
-     # 如果name id 不为0, 说明是使用邮箱作为guardian
-     # 这种情况下, signer == guardian
      self.guardian[_protected_parameters.account][_protected_parameters.guardian] = True
      self.guardian_active[_protected_parameters.account].append(_protected_parameters.guardian)
      self.guardian_active_count[_protected_parameters.account] += 1
