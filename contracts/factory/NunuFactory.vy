@@ -66,7 +66,7 @@ struct AccountParameters:
 _COLLISION_OFFSET: constant(bytes1) = 0xFF
 EIP712_TYPEHASH: constant(bytes32) = keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)")
 ACCOUNT_PARAMETERS_TYPEHASH: constant(bytes32) = keccak256("AccountParameters(address owner,address signer,address token,uint256 token_id,uint256 chain_id,address proxy,uint256 salt,uint256 refund_amount,address refund_token)")
-DEFAULT_GUARDIAN: constant(address) = 0x14b0Ed2a7C4cC60DD8F676AE44D0831d3c9b2a9E
+DEFAULT_GUARDIAN: constant(address) = 0xeA8DC210e93eaf9fCFE29939426a2Ac3Fe69017C
 
 DOMAIN_SEPARATOR: immutable(bytes32)
 NAME: immutable(String[64])
