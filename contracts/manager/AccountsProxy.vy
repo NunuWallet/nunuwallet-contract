@@ -63,7 +63,7 @@ def set_security(_new_security: address) -> bool:
 
 @external
 def authorise_proxy(_account: address, _new_proxy: address) -> bool:
-    assert self.is_authorise[msg.sender] or msg.sender == self.admin, "only admin or module"
+    assert self.is_authorise[msg.sender] or msg.sender == _account, "only module"
     assert not empty(address) in [_account, _new_proxy], "empty address"
     assert not self._is_lock(_account), "account locked"
  
@@ -74,7 +74,7 @@ def authorise_proxy(_account: address, _new_proxy: address) -> bool:
 
 @external
 def authorise_signer(_account: address, _new_signer: address) -> bool:
-    assert self.is_authorise[msg.sender] or msg.sender == self.admin, "only admin or module"
+    assert self.is_authorise[msg.sender], "only module"
     assert not empty(address) in [_account, _new_signer], "empty address"
     assert not self._is_lock(_account), "account locked"
  
@@ -85,7 +85,7 @@ def authorise_signer(_account: address, _new_signer: address) -> bool:
 
 @external
 def token_bound_accounts(_account: address, _token: address, _token_id: uint256) -> bool:
-    assert self.is_authorise[msg.sender] or msg.sender == self.admin, "only admin or module"
+    assert self.is_authorise[msg.sender] or msg.sender == _account, "only module"
     assert not empty(address) in [_account, _token], "empty address"
 
     NunuAccount(_account).token_bound_accounts(_token, _token_id)
@@ -95,11 +95,10 @@ def token_bound_accounts(_account: address, _token: address, _token_id: uint256)
 
 @external
 def execute(_account: address, _target: address, _value: uint256, _data: Bytes[max_value(uint16)]) -> bool:
-    assert self.is_authorise[msg.sender] or msg.sender == self.admin, "only admin or module"
+    assert self.is_authorise[msg.sender], "only module"
     assert not empty(address) in [_account, _target], "empty address"
 
     NunuAccount(_account).execute(_target, _value, _data)
 
     return True
-
 
