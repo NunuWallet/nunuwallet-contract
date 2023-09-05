@@ -4,9 +4,17 @@
 interface NunuAccount:
     def isValidSignature(_hash: bytes32, _signature: Bytes[65]) -> bytes4: view
 
+interface SecurityManager:
+    def get_guardian_count(_account: address) -> uint256: view
+    def is_guardian(_account: address, _guardian: address) -> bool: view
+    def signature() -> address: view
+
 interface OracleManager:
     def in_token(_token: address, _eth_amount: uint256) -> uint256: view
     def in_eth(_token: address, _token_amount: uint256) -> uint256: view
+
+interface SignatureChecker:
+    def recover_sig(_hash: bytes32, _signature: Bytes[65]) -> address: view
 
 
 event AddAuthoriseRelayer:
@@ -72,7 +80,7 @@ struct ExecuteParameters:
     deadline: uint256
     refund_token: address
     refund_address: address
-    signature: Bytes[65]
+    signature: Bytes[16575]
 
 NATIVE_TOKEN: constant(address) = empty(address)
 EMPTY_BYTES: constant(bytes32) = empty(bytes32)
@@ -96,6 +104,7 @@ whitelist: HashMap[address, HashMap[address, uint256]]
 proxy: public(address)
 oracle: public(address)
 security: public(address)
+sig_checker: public(address)
 expired_hash: public(HashMap[bytes32, bool])
 
 
@@ -108,6 +117,8 @@ def __init__(_relayer: address, _whitelist_period: uint256, _proxy: address, _or
     self.proxy = _proxy
     self.oracle = _oracle
     self.security = _security
+
+    self.sig_checker = SecurityManager(_security).signature()
 
     name: String[64] = concat("Nunu Wallet Base Manager", " v1")
     NAME = name
@@ -175,6 +186,117 @@ def _execute_parameters_hash(_param: ExecuteParameters) -> bytes32:
     )
 
     return digest
+
+
+@view
+@internal
+def _get_method_id(_data: Bytes[max_value(uint16)]) -> bytes4:
+    assert len(_data) != 0, "Nunu: empty data"
+
+    method: bytes4 = convert(slice(_data, 0, 4), bytes4)
+    return method
+
+
+@view
+@internal
+def _get_guardian_approvals_count(_account: address) -> uint256:
+
+    gac: uint256 = SecurityManager(self.security).get_guardian_count(_account)
+    return convert(ceil(convert(gac, decimal) / convert(2, decimal)), uint256)
+
+
+@view
+@internal
+def _recover_sig(_hash: bytes32, _signature: Bytes[16575], _slice: uint256) -> address:
+    
+    _data: Bytes[65] = slice(_signature, _slice, 65)
+    signer: address = SignatureChecker(self.sig_checker).recover_sig(_hash, _data)
+
+    return signer
+
+
+@view
+@internal
+def _get_required_signatures_from_account(_account: address, _data: Bytes[max_value(uint16)]) -> (uint256, uint256):
+
+    if len(_data) != 0:
+        method: bytes4 = self._get_method_id(_data)
+
+        if method == method_id("config_guardian_addition(address,address)", output_type=bytes4) or \
+            method == method_id("config_guardian_revoke(address,address)", output_type=bytes4) or \
+            method == method_id("finalize_recovery(address)", output_type=bytes4):
+            # anyone 
+            return (0, 5)
+
+        if method == method_id("add_guardian(address,address)", output_type=bytes4) or \
+            method == method_id(
+                "add_guardian_with_permit((address,address,address,uint256,uint256,uint256,uint256,uint256,bytes),(address,address,address,uint256,uint256,uint256,uint256,uint256,bytes)))", 
+                output_type=bytes4) or \
+            method == method_id("cancel_guardian_addition(address,address)", output_type=bytes4) or \
+            method == method_id("revoke_guardian(address,address)", output_type=bytes4) or \
+            method == method_id("cancel_guardian_revoke(address,address)", output_type=bytes4) or \
+            method == method_id(
+                "execute_recovery_with_permit(address,(address,address,address,address,uint256,uint256,uint256,bytes)[])", 
+                output_type=bytes4) or \
+            method == method_id("token_bound_accounts(address,address,uint256)", output_type=bytes4) or \
+            method == method_id("authorise_proxy(address,address)", output_type=bytes4):
+            # only owner
+            return (1, 1)
+
+        if method == method_id("execute_recovery(address,address)", output_type=bytes4):
+            gac: uint256 = self._get_guardian_approvals_count(_account)
+            assert gac > 0, "Nunu: insufficient guardian"
+            # owner+guardian or more guardian
+            return (gac, 3)
+        
+        if method == method_id("cancel_account_recovery(address)", output_type=bytes4):
+            gac: uint256 = SecurityManager(self.security).get_guardian_count(_account)
+            return (convert(ceil(convert((gac+1)/2, decimal)), uint256), 3)
+        
+        if method == method_id("lock(address)", output_type=bytes4) or \
+            method == method_id("unlock(address)", output_type=bytes4) or \
+            method == method_id("daily_withdrawl_limit(address,uint256)", output_type=bytes4):
+            # any guardian 
+            return (1, 2)
+    
+    gac: uint256 = self._get_guardian_approvals_count(_account)
+
+    # owner + more guardian
+    return (gac + 1, 4)
+
+
+@view
+@internal
+def _check_and_valid_signature(_account: address, _hash: bytes32, _signature: Bytes[16575], _option: uint256) -> bool:
+    
+    if len(_signature) == 0:
+        return True
+
+    for i in range(255):
+        if i >= (len(_signature) / 65):
+            break
+        
+        signer: address = self._recover_sig(_hash, _signature, i*65)
+        
+        if i == 0:
+            _data: Bytes[65] = slice(_signature, 0, 65)
+            if _option == 1 or _option == 4:
+                if IERC1271_ISVALIDSIGNATURE_SELECTOR == NunuAccount(_account).isValidSignature(_hash, _data):
+                    continue
+                return False
+            elif _option == 3:
+                if IERC1271_ISVALIDSIGNATURE_SELECTOR == NunuAccount(_account).isValidSignature(_hash, _data):
+                    continue
+
+        if signer == empty(address):
+            return False
+        
+        is_guardian: bool = SecurityManager(self.security).is_guardian(_account, signer)
+
+        if not is_guardian:
+            return False
+
+    return True
 
 
 @internal
@@ -378,9 +500,15 @@ def execute(_param: ExecuteParameters) -> bool:
     assert start_gas >= _param.gas_limit, "not enough gas provided"
 
     digest: bytes32 = self._execute_parameters_hash(_param)
-
     assert not self.expired_hash[digest], "Nunu: expired hash"
-    assert IERC1271_ISVALIDSIGNATURE_SELECTOR == NunuAccount(_param.account).isValidSignature(digest, _param.signature), "signature fail"
+
+    number_of_sig: uint256 = 0
+    option: uint256 = 0
+
+    number_of_sig, option = self._get_required_signatures_from_account(_param.account, _param.transaction_calldata)
+    assert number_of_sig > 0 or option == 5, "Nunu: wrong signature"
+    assert number_of_sig * 65 == len(_param.signature), "Nunu: Insufficient signature"
+    assert self._check_and_valid_signature(_param.account, digest, _param.signature, option), "Nunu: signature fail"
 
     refund_success: bool = self._refund(
         _param.account,
@@ -412,5 +540,5 @@ def execute(_param: ExecuteParameters) -> bool:
     assert success, "Nunu: call fail"
 
     log TranscationExecuted(_param.account, success, return_data)
-    return True
+    return success
 
