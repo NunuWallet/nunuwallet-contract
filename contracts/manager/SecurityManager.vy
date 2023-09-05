@@ -93,7 +93,6 @@ event ChangeFactory:
 struct RecoveryConfig:
      recovery: address
      execute_after: uint256
-     guardian_count: uint256
 
 struct GuardianConfigs:
      account: address
@@ -139,7 +138,8 @@ VERSION: constant(String[8]) = "v1.0.0"
 pending: HashMap[bytes32, GuardianConfigs]
 guardian_configs: HashMap[address, RecoveryConfig]
 guardian: HashMap[address, HashMap[address, bool]]
-guardian_active: HashMap[address, DynArray[address, max_value(uint8)]]
+guardian_active: HashMap[address, HashMap[uint256, address]]
+guardian_active_index: HashMap[address, HashMap[address, uint256]]
 guardian_active_count: HashMap[address, uint256]
 locked: HashMap[address, uint256]
 guardian_name_id: public(HashMap[address, uint256])
@@ -243,19 +243,6 @@ def _is_lock(_account: address) -> bool:
      return False
 
 
-@view
-@internal
-def _get_guardian(_account: address) -> DynArray[address, max_value(uint8)]:
-     
-     guardian_array: DynArray[address, max_value(uint8)] = []
-     ga_array: DynArray[address, max_value(uint8)] = self.guardian_active[_account]
-     for ga in ga_array:
-          if self.guardian[_account][ga]:
-               guardian_array.append(ga)
-
-     return guardian_array
-
-
 @internal
 def _set_lock(_account: address):
      self.locked[_account] = block.timestamp + lock_period
@@ -304,8 +291,8 @@ def get_guardian_count(_account: address) -> uint256:
 
 @view
 @external
-def get_guardian(_account: address) -> DynArray[address, max_value(uint8)]:
-     return self._get_guardian(_account)
+def get_guardian(_account: address, _guardian_id: uint256) -> address:
+     return self.guardian_active[_account][_guardian_id]
 
 
 @view
@@ -351,7 +338,8 @@ def add_guardian_with_permit(_protected_parameters: GuardianPermit, _guardian_pa
      assert SignatureChecker(self.signature).is_valid_signature_now(_guardian_parameters.signer, guardian_hash, _guardian_parameters.owner_signature), "Nunu: guardian signature fail"
      
      self.guardian[_protected_parameters.account][_protected_parameters.guardian] = True
-     self.guardian_active[_protected_parameters.account].append(_protected_parameters.guardian)
+     self.guardian_active[_protected_parameters.account][self.guardian_active_count[_protected_parameters.account]] = _protected_parameters.guardian
+     self.guardian_active_index[_protected_parameters.account][_protected_parameters.guardian] = self.guardian_active_count[_protected_parameters.account]
      self.guardian_active_count[_protected_parameters.account] += 1
      self.guardian_name_id[_protected_parameters.guardian] = _guardian_parameters.name_id
 
@@ -369,7 +357,8 @@ def config_guardian_addition(_account: address, _guardian: address):
      assert guardian_pending.pending < block.timestamp, "Nunu: pending addition not over"
 
      self.guardian[_account][_guardian] = True
-     self.guardian_active[_account].append(_guardian)
+     self.guardian_active[_account][self.guardian_active_count[_account]] = _guardian
+     self.guardian_active_index[_account][_guardian] = self.guardian_active_count[_account]
      self.guardian_active_count[_account] += 1
      self.pending[execute_id] = empty(GuardianConfigs)
      self.guardian_name_id[_guardian] = empty(uint256)
@@ -428,6 +417,16 @@ def config_guardian_revoke(_account: address, _guardian: address):
      assert guardian_pending.pending > 0, "Nunu: unknow pending revokation"
      assert guardian_pending.pending < block.timestamp, "Nunu: pending revokation not over"
 
+     last_guradian_index: uint256 = self.guardian_active_count[_account] - 1
+     guardian_index: uint256 = self.guardian_active_index[_account][_guardian]
+
+     if last_guradian_index != guardian_index:
+          last_guardian: address = self.guardian_active[_account][last_guradian_index]
+          self.guardian_active[_account][guardian_index] = last_guardian
+          self.guardian_active_index[_account][last_guardian] = guardian_index
+
+     self.guardian_active_index[_account][_guardian] = empty(uint256)
+     self.guardian_active[_account][last_guradian_index] = empty(address)
      self.guardian[_account][_guardian] = False
      self.guardian_active_count[_account] -= 1
      self.pending[execute_id] = empty(GuardianConfigs)
@@ -460,30 +459,16 @@ def execute_recovery(_account: address, _recovery: address):
 
      assert msg.sender == _account, "Nunu: only self"
 
-     self.guardian_configs[_account] = RecoveryConfig({recovery: _recovery, execute_after: block.timestamp + recovery_period, guardian_count: 0})
+     self.guardian_configs[_account] = RecoveryConfig({recovery: _recovery, execute_after: block.timestamp + recovery_period})
      self._set_lock(_account)
 
      log RecoveryExecuted(_account, _recovery, block.timestamp + recovery_period)
 
 
 @external
-def config_recovery(_account: address):
-     assert self.guardian[_account][msg.sender], "Nunu: sender not guardian"
-     assert block.timestamp <= self.guardian_configs[_account].execute_after, "Nunu: ongoing recovery period"
-
-     recovery: address = self.guardian_configs[_account].recovery
-     self.guardian_configs[_account].guardian_count += 1
-
-     log RecoveryConfigs(_account, recovery, msg.sender)
-
-
-@external
 def finalize_recovery(_account: address):
      assert block.timestamp > self.guardian_configs[_account].execute_after, "Nunu: recovery period"
 
-     gd_c: uint256 = self.guardian_active_count[_account]
-     assert self.guardian_configs[_account].guardian_count >= convert(ceil(convert((gd_c+1)/2, decimal)), uint256), "Nunu: insufficient guardian"
-     
      self._set_unlock(_account)
 
      # set new signer
@@ -499,9 +484,6 @@ def finalize_recovery(_account: address):
 def execute_recovery_with_permit(_account: address, _parameters: DynArray[RecoveryPermit, max_value(uint8)]):
      assert msg.sender == _account, "Nunu: only self"
      assert self._is_lock(_account), "Nunu: unlocked"
-
-     active_guardian: uint256 = self.guardian_active_count[_account]
-     assert convert(ceil(convert((active_guardian+1)/2, decimal)), uint256) <= len(_parameters), "Nunu: insufficient guardian"
 
      recovery: address = self.guardian_configs[_account].recovery
      guardian_arr: DynArray[address, max_value(uint8)] = []
@@ -530,7 +512,7 @@ def execute_recovery_with_permit(_account: address, _parameters: DynArray[Recove
 
 
 @external
-def cancel_recovery(_account: address):
+def cancel_account_recovery(_account: address):
      assert msg.sender == _account, "Nunu: only self"
 
      recovery: address = self.guardian_configs[_account].recovery
@@ -558,7 +540,7 @@ def unlock(_account: address):
 
 @external
 def daily_withdrawl_limit(_account: address, _max_limit: uint256):
-     assert msg.sender == _account, "Nunu: only self"
+     assert self.guardian[_account][msg.sender] or msg.sender == _account, "Nunu: must be guardian/self"
      assert not self._is_lock(_account), "Nunu: already locked"
 
      self.daily_withdrawl_limit_for_native[_account] = _max_limit
@@ -593,7 +575,8 @@ def initialize_default_guardian(_account: address, _guardian: address):
      assert msg.sender == self.factory, "Nunu: only factory"
 
      self.guardian[_account][_guardian] = True
-     self.guardian_active[_account].append(_guardian)
+     self.guardian_active[_account][self.guardian_active_count[_account]] = _guardian
+     self.guardian_active_index[_account][_guardian] = self.guardian_active_count[_account]
      self.guardian_active_count[_account] += 1
      log GuardianAdded(_account, _guardian)
 
