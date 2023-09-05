@@ -236,7 +236,8 @@ def execute(_target: address, _value: uint256, _data: Bytes[max_value(uint16)]) 
     assert msg.sender in [self._owner(), self.proxy], "Only owner or proxy"
     assert not SecurityManager(self.security).is_lock(self), "account locked"
 
-    self._check_daily_limit(_value)
+    if _value != 0:
+        self._check_daily_limit(_value)
 
     success: bool = False
     return_data: Bytes[32] = b""
