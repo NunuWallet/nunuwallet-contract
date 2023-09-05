@@ -23,7 +23,7 @@ def new_account(bob, w3, nunu_account, factory, proxy, security, factory_sign_me
     proxy_address = proxy.address
     refund_amount = int(1e10)
     refund_token = zero_address
-    # salt = 12345
+    # salt_text = "12345"
     salt_text = "Nunu Factory v1" + "create_mini_proxy" + str(time.time())
     salt = w3.to_int(hexstr=w3.keccak(text=salt_text).hex())
 

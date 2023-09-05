@@ -9,5 +9,5 @@ def test_check_account(factory, new_account):
     zero_address = "0x0000000000000000000000000000000000000000"
 
     account_contract = Contract(new_account)
-
-    assert account_contract.owner() == zero_address
+    print(new_account)
+    assert account_contract.owner() != zero_address

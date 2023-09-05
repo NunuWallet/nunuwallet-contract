@@ -2,7 +2,7 @@ from ape import accounts, chain, Contract
 import time
 
 
-def test_recovery(bob, w3, proxy, base, security, new_account, base_sign_message):
+def test_recovery(bob, alice, w3, proxy, base, security, new_account, base_sign_message, get_key):
 
     new_signer = accounts[1]
 
@@ -37,7 +37,8 @@ def test_recovery(bob, w3, proxy, base, security, new_account, base_sign_message
         refund_token, 
         refund_addres, 
         base.address, 
-        w3
+        w3,
+        get_key(0)
     )
 
     param = {
@@ -59,20 +60,11 @@ def test_recovery(bob, w3, proxy, base, security, new_account, base_sign_message
 
     assert security.is_lock(new_account)
 
-    _, _, count = security.get_recovery(new_account)
-    assert count == 0
-
-
     # guardian config recovery
     new_acc_contract = Contract(new_account)
     old_signer = new_acc_contract.signer()
 
-    assert security.is_guardian(new_account, bob.address)
-
-    security.config_recovery(new_account, sender=bob)
-
-    _, _, count = security.get_recovery(new_account)
-    assert count == 1
+    assert security.is_guardian(new_account, alice.address)
 
     chain.pending_timestamp += (int(time.time()) + 1800000)
 

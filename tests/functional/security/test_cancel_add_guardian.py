@@ -3,9 +3,9 @@ import time
 
 
 
-def test_cancel_add_guardian(bob, w3, proxy, base, security, new_account, base_sign_message):
+def test_cancel_add_guardian(bob, alice, w3, proxy, base, security, new_account, base_sign_message, get_key):
 
-    assert security.is_guardian(new_account, bob.address), "not guardian"
+    assert security.is_guardian(new_account, alice.address), "not guardian"
 
     new_guardian1 = accounts[0]
 
@@ -39,7 +39,8 @@ def test_cancel_add_guardian(bob, w3, proxy, base, security, new_account, base_s
         refund_token, 
         refund_addres, 
         base.address, 
-        w3
+        w3,
+        get_key(0)
     )
 
     param = {
@@ -89,7 +90,8 @@ def test_cancel_add_guardian(bob, w3, proxy, base, security, new_account, base_s
         refund_token, 
         refund_addres, 
         base.address, 
-        w3
+        w3,
+        get_key(0)
     )
 
     param = {

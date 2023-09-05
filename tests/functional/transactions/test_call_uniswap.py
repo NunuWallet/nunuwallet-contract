@@ -20,7 +20,8 @@ def test_transfer_eth(
     base, 
     base_sign_message, 
     new_account, 
-    fork_uniswap_router
+    fork_uniswap_router,
+    get_key
 ):
 
     # authorise fist
@@ -52,7 +53,7 @@ def test_transfer_eth(
     refund_token = zero_address
     refund_addres = accounts[0].address
 
-    signature = base_sign_message(
+    owner_signature = base_sign_message(
         owner, 
         account, 
         transaction_to, 
@@ -64,8 +65,28 @@ def test_transfer_eth(
         refund_token, 
         refund_addres, 
         base.address, 
-        w3
+        w3,
+        get_key(0)
     )
+
+    guardian_signature = base_sign_message(
+        owner, 
+        account, 
+        transaction_to, 
+        transaction_value, 
+        nonce, 
+        gas_price, 
+        gas_limit, 
+        deadline, 
+        refund_token, 
+        refund_addres, 
+        base.address, 
+        w3,
+        get_key(1)
+    )
+
+    guardian_signature = guardian_signature[2:]
+    signature = owner_signature + guardian_signature
 
     param = {
         "owner": owner,
