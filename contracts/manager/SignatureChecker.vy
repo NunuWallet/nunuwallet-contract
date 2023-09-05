@@ -90,3 +90,8 @@ def is_valid_ERC1271_signature_now(_signer: address, _hash: bytes32, _signature:
 
     return self._is_valid_ERC1271_signature_now(_signer, _hash, _signature)
 
+
+@view
+@external
+def recover_sig(_hash: bytes32, _signature: Bytes[65]) -> address:
+    return self._recover_sig(_hash, _signature)
